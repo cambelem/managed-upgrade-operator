@@ -85,10 +85,24 @@ var _ = Describe("ControlPlaneStep", func() {
 	})
 
 	Context("When assessing if the control plane is upgraded to a version", func() {
+		Context("When ensuring channel fails", func() {
+			It("Indicates an error", func() {
+				fakeError := fmt.Errorf("fake channel error")
+				mockCVClient.EXPECT().EnsureChannel(gomock.Any()).Return(fakeError)
+				result, err := upgrader.ControlPlaneUpgraded(context.TODO(), logger)
+				Expect(err).To(HaveOccurred())
+				Expect(err).To(Equal(fakeError))
+				Expect(result).To(BeFalse())
+			})
+		})
+
 		Context("When the clusterversion can't be fetched", func() {
 			It("Indicates an error", func() {
 				fakeError := fmt.Errorf("fake error")
-				mockCVClient.EXPECT().GetClusterVersion().Return(nil, fakeError)
+				gomock.InOrder(
+					mockCVClient.EXPECT().EnsureChannel(gomock.Any()).Return(nil),
+					mockCVClient.EXPECT().GetClusterVersion().Return(nil, fakeError),
+				)
 				result, err := upgrader.ControlPlaneUpgraded(context.TODO(), logger)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(Equal(fakeError))
@@ -100,6 +114,7 @@ var _ = Describe("ControlPlaneStep", func() {
 			It("Should report error", func() {
 				fakeError := fmt.Errorf("fake notification error")
 				gomock.InOrder(
+					mockCVClient.EXPECT().EnsureChannel(gomock.Any()).Return(nil),
 					mockCVClient.EXPECT().GetClusterVersion().Return(nil, nil),
 					mockCVClient.EXPECT().HasUpgradeCompleted(gomock.Any(), gomock.Any()).Return(true),
 					mockEMClient.EXPECT().Notify(gomock.Any()).Return(fakeError),
@@ -125,6 +140,7 @@ var _ = Describe("ControlPlaneStep", func() {
 			})
 			It("Flags the control plane as upgraded", func() {
 				gomock.InOrder(
+					mockCVClient.EXPECT().EnsureChannel(gomock.Any()).Return(nil),
 					mockCVClient.EXPECT().GetClusterVersion().Return(clusterVersion, nil),
 					mockCVClient.EXPECT().HasUpgradeCompleted(gomock.Any(), gomock.Any()).Return(true),
 					mockEMClient.EXPECT().Notify(gomock.Any()),
@@ -158,6 +174,7 @@ var _ = Describe("ControlPlaneStep", func() {
 				})
 				It("Sets the upgrade timeout flag", func() {
 					gomock.InOrder(
+						mockCVClient.EXPECT().EnsureChannel(gomock.Any()).Return(nil),
 						mockCVClient.EXPECT().GetClusterVersion().Return(clusterVersion, nil),
 						mockCVClient.EXPECT().HasUpgradeCompleted(gomock.Any(), gomock.Any()).Return(false),
 						mockMetricsClient.EXPECT().UpdateMetricUpgradeControlPlaneTimeout(upgradeConfig.Name, upgradeConfig.Spec.Desired.Version),
@@ -174,6 +191,7 @@ var _ = Describe("ControlPlaneStep", func() {
 				})
 				It("Does not set the upgrade timeout flag", func() {
 					gomock.InOrder(
+						mockCVClient.EXPECT().EnsureChannel(gomock.Any()).Return(nil),
 						mockCVClient.EXPECT().GetClusterVersion().Return(clusterVersion, nil),
 						mockCVClient.EXPECT().HasUpgradeCompleted(gomock.Any(), gomock.Any()).Return(false),
 					)
@@ -198,6 +216,7 @@ var _ = Describe("ControlPlaneStep", func() {
 			})
 			It("Sets the appropriate metric", func() {
 				gomock.InOrder(
+					mockCVClient.EXPECT().EnsureChannel(gomock.Any()).Return(nil),
 					mockCVClient.EXPECT().GetClusterVersion().Return(clusterVersion, nil),
 					mockCVClient.EXPECT().HasUpgradeCompleted(gomock.Any(), gomock.Any()).Return(false),
 					mockMetricsClient.EXPECT().UpdateMetricUpgradeControlPlaneTimeout(upgradeConfig.Name, upgradeConfig.Spec.Desired.Version),

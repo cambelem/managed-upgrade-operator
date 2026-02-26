@@ -45,6 +45,12 @@ func (c *clusterUpgrader) CommenceUpgrade(ctx context.Context, logger logr.Logge
 
 // ControlPlaneUpgraded checks whether control plane is upgraded. The ClusterVersion reports when cvo and master nodes are upgraded.
 func (c *clusterUpgrader) ControlPlaneUpgraded(ctx context.Context, logger logr.Logger) (bool, error) {
+	// Ensure channel is still correct - external systems (e.g., Hive) may reset it
+	if err := c.cvClient.EnsureChannel(c.upgradeConfig); err != nil {
+		logger.Error(err, "Failed to ensure channel is correct")
+		return false, err
+	}
+
 	clusterVersion, err := c.cvClient.GetClusterVersion()
 	if err != nil {
 		return false, err

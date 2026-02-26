@@ -311,6 +311,86 @@ var _ = Describe("ClusterVersion client and utils", func() {
 				})
 			})
 		})
+		Context("When ensuring the ClusterVersion channel", func() {
+			Context("When using image-based upgrade", func() {
+				It("Returns nil without patching", func() {
+					upgradeConfig.Spec.Desired.Image = "quay.io/test/test-image"
+					upgradeConfig.Spec.Desired.Channel = ""
+					upgradeConfig.Spec.Desired.Version = ""
+					err := cvClient.EnsureChannel(upgradeConfig)
+					Expect(err).NotTo(HaveOccurred())
+				})
+			})
+
+			Context("When using channel+version upgrade", func() {
+				Context("When the channel matches", func() {
+					It("Returns nil without patching", func() {
+						clusterVersion := configv1.ClusterVersion{
+							Spec: configv1.ClusterVersionSpec{
+								Channel: upgradeConfig.Spec.Desired.Channel,
+							},
+						}
+						gomock.InOrder(
+							mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, clusterVersion).Return(nil),
+						)
+						err := cvClient.EnsureChannel(upgradeConfig)
+						Expect(err).NotTo(HaveOccurred())
+					})
+				})
+
+				Context("When the channel does not match", func() {
+					It("Patches the channel to the desired value", func() {
+						clusterVersion := configv1.ClusterVersion{
+							Spec: configv1.ClusterVersionSpec{
+								Channel: "stable-4.13",
+							},
+						}
+						channelPatch := client.RawPatch(types.MergePatchType, []byte(fmt.Sprintf(`{"spec":{"channel":"%s"}}`, upgradeConfig.Spec.Desired.Channel)))
+						gomock.InOrder(
+							mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, clusterVersion).Return(nil),
+							mockKubeClient.EXPECT().Patch(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+								func(ctx context.Context, cv *configv1.ClusterVersion, p client.Patch, po ...client.PatchOption) error {
+									Expect(reflect.DeepEqual(p, channelPatch)).To(BeTrue())
+									return nil
+								}),
+						)
+						err := cvClient.EnsureChannel(upgradeConfig)
+						Expect(err).NotTo(HaveOccurred())
+					})
+				})
+
+				Context("When fetching ClusterVersion fails", func() {
+					It("Returns the error", func() {
+						fakeError := fmt.Errorf("fake error")
+						gomock.InOrder(
+							mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(fakeError),
+						)
+						err := cvClient.EnsureChannel(upgradeConfig)
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(Equal(fakeError))
+					})
+				})
+
+				Context("When patching ClusterVersion fails", func() {
+					It("Returns the error", func() {
+						clusterVersion := configv1.ClusterVersion{
+							Spec: configv1.ClusterVersionSpec{
+								Channel: "stable-4.13",
+							},
+						}
+						fakeError := fmt.Errorf("patch error")
+						gomock.InOrder(
+							mockKubeClient.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).SetArg(2, clusterVersion).Return(nil),
+							mockKubeClient.EXPECT().Patch(gomock.Any(), gomock.Any(), gomock.Any()).Return(fakeError),
+						)
+						err := cvClient.EnsureChannel(upgradeConfig)
+						Expect(err).To(HaveOccurred())
+						Expect(err).To(Equal(fakeError))
+					})
+				})
+			})
+		})
+
 		Context("When setting the ClusterVersion image", func() {
 			Context("When the clusterversion desired image is missing", func() {
 				It("Sets the desired image from the value of upgradeconfig", func() {

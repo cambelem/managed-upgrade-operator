@@ -33,6 +33,7 @@ type ClusterVersion interface {
 	GetClusterVersion() (*configv1.ClusterVersion, error)
 	HasUpgradeCommenced(*upgradev1alpha1.UpgradeConfig) (bool, error)
 	EnsureDesiredConfig(uc *upgradev1alpha1.UpgradeConfig) (bool, error)
+	EnsureChannel(uc *upgradev1alpha1.UpgradeConfig) error
 	HasUpgradeCompleted(*configv1.ClusterVersion, *upgradev1alpha1.UpgradeConfig) bool
 	HasDegradedOperators() (*HasDegradedOperatorsResult, error)
 	GetClusterId() string
@@ -105,6 +106,34 @@ func (c *clusterVersionClient) EnsureDesiredConfig(uc *upgradev1alpha1.UpgradeCo
 	}
 
 	return false, fmt.Errorf("failed to update the clusterversion from the given upgradeconfig")
+}
+
+// EnsureChannel ensures the ClusterVersion channel matches the desired channel.
+func (c *clusterVersionClient) EnsureChannel(uc *upgradev1alpha1.UpgradeConfig) error {
+	// Only applicable for channel+version upgrades, not image-based
+	upgradeSource, err := checkUpgradeSource(uc)
+	if err != nil {
+		return err
+	}
+	if upgradeSource != UpgradeWithChannelVersion {
+		return nil
+	}
+
+	cv, err := c.GetClusterVersion()
+	if err != nil {
+		return err
+	}
+
+	desired := uc.Spec.Desired
+	if cv.Spec.Channel != desired.Channel {
+		logger.Info(fmt.Sprintf("Channel mismatch detected: current=%s, desired=%s. Re-patching channel.", cv.Spec.Channel, desired.Channel))
+		desiredChannel := []byte(fmt.Sprintf(`{"spec":{"channel":"%s"}}`, desired.Channel))
+		if err := c.client.Patch(context.TODO(), cv, client.RawPatch(types.MergePatchType, desiredChannel)); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // HasDegradedOperatorsResult holds fields that describe a degraded operator
